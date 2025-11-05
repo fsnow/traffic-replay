@@ -125,11 +125,16 @@ go run cmd/filter/main.go -input recording.bin -output first-100ms.bin \
 
 **script-gen** - Generate mongosh replay script
 ```bash
-# Generate full replay script
+# Generate full replay script (uses db.getSiblingDB() for explicit database names)
 go run cmd/script-gen/main.go recording.bin --requests-only > replay.js
 
 # Generate CRUD-only script
 go run cmd/script-gen/main.go recording.bin --crud-only --requests-only > crud.js
+
+# Output format:
+#   db.getSiblingDB("traffictest").users.insertOne({...});
+#   db.getSiblingDB("traffictest").orders.find({...});
+#   db.getSiblingDB("admin").runCommand({hello: 1});
 
 # Then manually replay:
 mongosh mongodb://localhost:27017 < replay.js

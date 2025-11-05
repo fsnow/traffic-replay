@@ -42,10 +42,10 @@ func main() {
 
 	fmt.Println("// Generated from:", filePath)
 	fmt.Println("// MongoDB operations replay script")
+	fmt.Println("// Each operation explicitly specifies the database")
 	fmt.Println()
 
-	// Group operations by database
-	dbOps := make(map[string][]string)
+	var operations []string
 	var unknownOps []string
 
 	totalPackets := 0
@@ -98,32 +98,15 @@ func main() {
 		}
 
 		if script != "" {
-			dbOps[db] = append(dbOps[db], script)
+			operations = append(operations, script)
 			outputPackets++
 		}
 	}
 
-	// Print operations grouped by database
-	for db, ops := range dbOps {
-		if db == "unknown" {
-			continue
-		}
-		fmt.Printf("// Database: %s (%d operations)\n", db, len(ops))
-		fmt.Printf("use %s;\n\n", db)
-
-		for _, op := range ops {
-			fmt.Println(op)
-			fmt.Println()
-		}
-	}
-
-	// Print unknown database operations
-	if ops, ok := dbOps["unknown"]; ok && len(ops) > 0 {
-		fmt.Println("// Database: unknown")
-		for _, op := range ops {
-			fmt.Println(op)
-			fmt.Println()
-		}
+	// Print all operations
+	for _, op := range operations {
+		fmt.Println(op)
+		fmt.Println()
 	}
 
 	// Print operations we couldn't parse
@@ -172,32 +155,32 @@ func generateScript(packet *reader.Packet, cmd string, db string) (string, error
 	// Generate script based on command type
 	switch cmd {
 	case "insert":
-		return generateInsert(doc)
+		return generateInsert(doc, db)
 	case "update":
-		return generateUpdate(doc)
+		return generateUpdate(doc, db)
 	case "delete":
-		return generateDelete(doc)
+		return generateDelete(doc, db)
 	case "find":
-		return generateFind(doc)
+		return generateFind(doc, db)
 	case "aggregate":
-		return generateAggregate(doc)
+		return generateAggregate(doc, db)
 	case "findAndModify":
-		return generateFindAndModify(doc)
+		return generateFindAndModify(doc, db)
 	case "createIndexes":
-		return generateCreateIndexes(doc)
+		return generateCreateIndexes(doc, db)
 	case "dropIndexes":
-		return generateDropIndexes(doc)
+		return generateDropIndexes(doc, db)
 	case "create":
-		return generateCreate(doc)
+		return generateCreate(doc, db)
 	case "drop":
-		return generateDrop(doc)
+		return generateDrop(doc, db)
 	default:
 		// For other commands, just output as runCommand
-		return generateRunCommand(doc, cmd)
+		return generateRunCommand(doc, cmd, db)
 	}
 }
 
-func generateInsert(doc bson.M) (string, error) {
+func generateInsert(doc bson.M, database string) (string, error) {
 	coll, ok := doc["insert"].(string)
 	if !ok {
 		return "", fmt.Errorf("missing collection name")
@@ -214,13 +197,13 @@ func generateInsert(doc bson.M) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		lines = append(lines, fmt.Sprintf("db.%s.insertOne(%s);", coll, string(jsonBytes)))
+		lines = append(lines, fmt.Sprintf("db.getSiblingDB(\"%s\").%s.insertOne(%s);", database, coll, string(jsonBytes)))
 	}
 
 	return strings.Join(lines, "\n"), nil
 }
 
-func generateUpdate(doc bson.M) (string, error) {
+func generateUpdate(doc bson.M, database string) (string, error) {
 	coll, ok := doc["update"].(string)
 	if !ok {
 		return "", fmt.Errorf("missing collection name")
@@ -246,18 +229,18 @@ func generateUpdate(doc bson.M) (string, error) {
 		updateJSON, _ := json.MarshalIndent(updateDoc, "", "  ")
 
 		if multi == true {
-			lines = append(lines, fmt.Sprintf("db.%s.updateMany(\n  %s,\n  %s\n);",
-				coll, string(filterJSON), string(updateJSON)))
+			lines = append(lines, fmt.Sprintf("db.getSiblingDB(\"%s\").%s.updateMany(\n  %s,\n  %s\n);",
+				database, coll, string(filterJSON), string(updateJSON)))
 		} else {
-			lines = append(lines, fmt.Sprintf("db.%s.updateOne(\n  %s,\n  %s\n);",
-				coll, string(filterJSON), string(updateJSON)))
+			lines = append(lines, fmt.Sprintf("db.getSiblingDB(\"%s\").%s.updateOne(\n  %s,\n  %s\n);",
+				database, coll, string(filterJSON), string(updateJSON)))
 		}
 	}
 
 	return strings.Join(lines, "\n"), nil
 }
 
-func generateDelete(doc bson.M) (string, error) {
+func generateDelete(doc bson.M, database string) (string, error) {
 	coll, ok := doc["delete"].(string)
 	if !ok {
 		return "", fmt.Errorf("missing collection name")
@@ -282,16 +265,16 @@ func generateDelete(doc bson.M) (string, error) {
 
 		// limit: 0 = deleteMany, limit: 1 = deleteOne
 		if limit == int32(1) || limit == int64(1) {
-			lines = append(lines, fmt.Sprintf("db.%s.deleteOne(%s);", coll, string(filterJSON)))
+			lines = append(lines, fmt.Sprintf("db.getSiblingDB(\"%s\").%s.deleteOne(%s);", database, coll, string(filterJSON)))
 		} else {
-			lines = append(lines, fmt.Sprintf("db.%s.deleteMany(%s);", coll, string(filterJSON)))
+			lines = append(lines, fmt.Sprintf("db.getSiblingDB(\"%s\").%s.deleteMany(%s);", database, coll, string(filterJSON)))
 		}
 	}
 
 	return strings.Join(lines, "\n"), nil
 }
 
-func generateFind(doc bson.M) (string, error) {
+func generateFind(doc bson.M, database string) (string, error) {
 	coll, ok := doc["find"].(string)
 	if !ok {
 		return "", fmt.Errorf("missing collection name")
@@ -307,24 +290,24 @@ func generateFind(doc bson.M) (string, error) {
 	// Add projection if present
 	if projection, ok := doc["projection"].(bson.M); ok && len(projection) > 0 {
 		projJSON, _ := json.MarshalIndent(projection, "", "  ")
-		return fmt.Sprintf("db.%s.find(\n  %s\n).project(%s);", coll, string(filterJSON), string(projJSON)), nil
+		return fmt.Sprintf("db.getSiblingDB(\"%s\").%s.find(\n  %s\n).project(%s);", database, coll, string(filterJSON), string(projJSON)), nil
 	}
 
 	// Add sort if present
 	if sort, ok := doc["sort"].(bson.M); ok && len(sort) > 0 {
 		sortJSON, _ := json.MarshalIndent(sort, "", "  ")
-		return fmt.Sprintf("db.%s.find(\n  %s\n).sort(%s);", coll, string(filterJSON), string(sortJSON)), nil
+		return fmt.Sprintf("db.getSiblingDB(\"%s\").%s.find(\n  %s\n).sort(%s);", database, coll, string(filterJSON), string(sortJSON)), nil
 	}
 
 	// Add limit if present
 	if limit, ok := doc["limit"]; ok {
-		return fmt.Sprintf("db.%s.find(\n  %s\n).limit(%v);", coll, string(filterJSON), limit), nil
+		return fmt.Sprintf("db.getSiblingDB(\"%s\").%s.find(\n  %s\n).limit(%v);", database, coll, string(filterJSON), limit), nil
 	}
 
-	return fmt.Sprintf("db.%s.find(%s);", coll, string(filterJSON)), nil
+	return fmt.Sprintf("db.getSiblingDB(\"%s\").%s.find(%s);", database, coll, string(filterJSON)), nil
 }
 
-func generateAggregate(doc bson.M) (string, error) {
+func generateAggregate(doc bson.M, database string) (string, error) {
 	coll, ok := doc["aggregate"].(string)
 	if !ok {
 		return "", fmt.Errorf("missing collection name")
@@ -337,10 +320,10 @@ func generateAggregate(doc bson.M) (string, error) {
 
 	pipelineJSON, _ := json.MarshalIndent(pipeline, "", "  ")
 
-	return fmt.Sprintf("db.%s.aggregate(%s);", coll, string(pipelineJSON)), nil
+	return fmt.Sprintf("db.getSiblingDB(\"%s\").%s.aggregate(%s);", database, coll, string(pipelineJSON)), nil
 }
 
-func generateFindAndModify(doc bson.M) (string, error) {
+func generateFindAndModify(doc bson.M, database string) (string, error) {
 	coll, ok := doc["findAndModify"].(string)
 	if !ok {
 		return "", fmt.Errorf("missing collection name")
@@ -351,10 +334,10 @@ func generateFindAndModify(doc bson.M) (string, error) {
 
 	argsJSON, _ := json.MarshalIndent(doc, "", "  ")
 
-	return fmt.Sprintf("db.%s.findAndModify(%s);", coll, string(argsJSON)), nil
+	return fmt.Sprintf("db.getSiblingDB(\"%s\").%s.findAndModify(%s);", database, coll, string(argsJSON)), nil
 }
 
-func generateCreateIndexes(doc bson.M) (string, error) {
+func generateCreateIndexes(doc bson.M, database string) (string, error) {
 	coll, ok := doc["createIndexes"].(string)
 	if !ok {
 		return "", fmt.Errorf("missing collection name")
@@ -386,16 +369,16 @@ func generateCreateIndexes(doc bson.M) (string, error) {
 
 		if len(options) > 0 {
 			optJSON, _ := json.MarshalIndent(options, "", "  ")
-			lines = append(lines, fmt.Sprintf("db.%s.createIndex(%s, %s);", coll, string(keyJSON), string(optJSON)))
+			lines = append(lines, fmt.Sprintf("db.getSiblingDB(\"%s\").%s.createIndex(%s, %s);", database, coll, string(keyJSON), string(optJSON)))
 		} else {
-			lines = append(lines, fmt.Sprintf("db.%s.createIndex(%s);", coll, string(keyJSON)))
+			lines = append(lines, fmt.Sprintf("db.getSiblingDB(\"%s\").%s.createIndex(%s);", database, coll, string(keyJSON)))
 		}
 	}
 
 	return strings.Join(lines, "\n"), nil
 }
 
-func generateDropIndexes(doc bson.M) (string, error) {
+func generateDropIndexes(doc bson.M, database string) (string, error) {
 	coll, ok := doc["dropIndexes"].(string)
 	if !ok {
 		return "", fmt.Errorf("missing collection name")
@@ -404,28 +387,28 @@ func generateDropIndexes(doc bson.M) (string, error) {
 	index := doc["index"]
 	indexJSON, _ := json.Marshal(index)
 
-	return fmt.Sprintf("db.%s.dropIndex(%s);", coll, string(indexJSON)), nil
+	return fmt.Sprintf("db.getSiblingDB(\"%s\").%s.dropIndex(%s);", database, coll, string(indexJSON)), nil
 }
 
-func generateCreate(doc bson.M) (string, error) {
+func generateCreate(doc bson.M, database string) (string, error) {
 	coll, ok := doc["create"].(string)
 	if !ok {
 		return "", fmt.Errorf("missing collection name")
 	}
 
-	return fmt.Sprintf("db.createCollection(\"%s\");", coll), nil
+	return fmt.Sprintf("db.getSiblingDB(\"%s\").createCollection(\"%s\");", database, coll), nil
 }
 
-func generateDrop(doc bson.M) (string, error) {
+func generateDrop(doc bson.M, database string) (string, error) {
 	coll, ok := doc["drop"].(string)
 	if !ok {
 		return "", fmt.Errorf("missing collection name")
 	}
 
-	return fmt.Sprintf("db.%s.drop();", coll), nil
+	return fmt.Sprintf("db.getSiblingDB(\"%s\").%s.drop();", database, coll), nil
 }
 
-func generateRunCommand(doc bson.M, cmd string) (string, error) {
+func generateRunCommand(doc bson.M, cmd string, database string) (string, error) {
 	docJSON, _ := json.MarshalIndent(doc, "", "  ")
-	return fmt.Sprintf("db.runCommand(%s);", string(docJSON)), nil
+	return fmt.Sprintf("db.getSiblingDB(\"%s\").runCommand(%s);", database, string(docJSON)), nil
 }

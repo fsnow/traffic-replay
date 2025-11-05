@@ -152,6 +152,9 @@ func generateScript(packet *reader.Packet, cmd string, db string) (string, error
 		return "", fmt.Errorf("failed to unmarshal BSON: %w", err)
 	}
 
+	// Clean up internal driver/server fields from the document
+	doc = cleanInternalFields(doc)
+
 	// Generate script based on command type
 	switch cmd {
 	case "insert":
@@ -176,8 +179,62 @@ func generateScript(packet *reader.Packet, cmd string, db string) (string, error
 		return generateDrop(doc, db)
 	default:
 		// For other commands, just output as runCommand
+		// (already cleaned of internal fields above)
 		return generateRunCommand(doc, cmd, db)
 	}
+}
+
+// cleanInternalFields removes driver/server internal fields from BSON documents
+func cleanInternalFields(doc bson.M) bson.M {
+	cleaned := bson.M{}
+
+	// List of internal driver/server fields to remove
+	internalFields := map[string]bool{
+		"$clusterTime": true,
+		"$db":          true,
+		"$readPreference": true,
+		"lsid":         true,
+		"txnNumber":    true,
+		"autocommit":   true,
+		"startTransaction": true,
+	}
+
+	for key, value := range doc {
+		// Skip internal fields
+		if internalFields[key] {
+			continue
+		}
+
+		// Recursively clean nested documents
+		switch v := value.(type) {
+		case bson.M:
+			cleaned[key] = cleanInternalFields(v)
+		case bson.A:
+			cleaned[key] = cleanInternalFieldsArray(v)
+		default:
+			cleaned[key] = value
+		}
+	}
+
+	return cleaned
+}
+
+// cleanInternalFieldsArray recursively cleans arrays
+func cleanInternalFieldsArray(arr bson.A) bson.A {
+	cleaned := bson.A{}
+
+	for _, item := range arr {
+		switch v := item.(type) {
+		case bson.M:
+			cleaned = append(cleaned, cleanInternalFields(v))
+		case bson.A:
+			cleaned = append(cleaned, cleanInternalFieldsArray(v))
+		default:
+			cleaned = append(cleaned, item)
+		}
+	}
+
+	return cleaned
 }
 
 func generateInsert(doc bson.M, database string) (string, error) {
@@ -191,16 +248,21 @@ func generateInsert(doc bson.M, database string) (string, error) {
 		return "", fmt.Errorf("missing documents array")
 	}
 
-	var lines []string
-	for _, d := range documents {
-		jsonBytes, err := json.MarshalIndent(d, "", "  ")
+	// Use insertMany if multiple documents, insertOne if single document
+	if len(documents) == 1 {
+		jsonBytes, err := json.MarshalIndent(documents[0], "", "  ")
 		if err != nil {
 			return "", err
 		}
-		lines = append(lines, fmt.Sprintf("db.getSiblingDB(\"%s\").%s.insertOne(%s);", database, coll, string(jsonBytes)))
+		return fmt.Sprintf("db.getSiblingDB(\"%s\").%s.insertOne(%s);", database, coll, string(jsonBytes)), nil
 	}
 
-	return strings.Join(lines, "\n"), nil
+	// Multiple documents - use insertMany
+	jsonBytes, err := json.MarshalIndent(documents, "", "  ")
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("db.getSiblingDB(\"%s\").%s.insertMany(%s);", database, coll, string(jsonBytes)), nil
 }
 
 func generateUpdate(doc bson.M, database string) (string, error) {
@@ -228,10 +290,27 @@ func generateUpdate(doc bson.M, database string) (string, error) {
 		filterJSON, _ := json.MarshalIndent(filter, "", "  ")
 		updateJSON, _ := json.MarshalIndent(updateDoc, "", "  ")
 
-		if multi == true {
+		// Check if updateDoc is a replacement (no atomic operators) or an update
+		isReplacement := true
+		if updateDocMap, ok := updateDoc.(bson.M); ok {
+			for key := range updateDocMap {
+				if strings.HasPrefix(key, "$") {
+					isReplacement = false
+					break
+				}
+			}
+		}
+
+		if isReplacement {
+			// Full document replacement - use replaceOne
+			lines = append(lines, fmt.Sprintf("db.getSiblingDB(\"%s\").%s.replaceOne(\n  %s,\n  %s\n);",
+				database, coll, string(filterJSON), string(updateJSON)))
+		} else if multi == true {
+			// Update with operators - updateMany
 			lines = append(lines, fmt.Sprintf("db.getSiblingDB(\"%s\").%s.updateMany(\n  %s,\n  %s\n);",
 				database, coll, string(filterJSON), string(updateJSON)))
 		} else {
+			// Update with operators - updateOne
 			lines = append(lines, fmt.Sprintf("db.getSiblingDB(\"%s\").%s.updateOne(\n  %s,\n  %s\n);",
 				database, coll, string(filterJSON), string(updateJSON)))
 		}
@@ -409,6 +488,7 @@ func generateDrop(doc bson.M, database string) (string, error) {
 }
 
 func generateRunCommand(doc bson.M, cmd string, database string) (string, error) {
+	// Document is already cleaned by cleanInternalFields()
 	docJSON, _ := json.MarshalIndent(doc, "", "  ")
 	return fmt.Sprintf("db.getSiblingDB(\"%s\").runCommand(%s);", database, string(docJSON)), nil
 }

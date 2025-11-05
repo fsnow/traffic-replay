@@ -9,6 +9,8 @@ docs/
 ├── README.md                              # This file
 ├── design.md                              # Design decisions and architecture
 ├── RESEARCH-SUMMARY.md                    # Research phase summary and key findings
+├── FILTERING.md                           # Guide to filtering recordings (99%+ reduction)
+├── COMMAND-AMBIGUITIES.md                 # MongoDB command interpretation for consulting engineers
 └── reference/
     ├── mongodb-traffic-recording.md       # MongoDB traffic recording reference
     ├── deprecated-opcodes.md              # Wire protocol OpCode compatibility
@@ -42,6 +44,31 @@ High-level summary of the research phase completed in October-November 2025:
 - Final design decisions summary
 
 Quick reference for understanding what research was done and why we made certain choices.
+
+### FILTERING.md
+**Comprehensive filtering guide** for MongoDB traffic recordings:
+- The problem: 99% of traffic is cluster chatter
+- How command name extraction works (OP_MSG BSON parsing)
+- Simple vs context-aware classification
+- Filter tool usage and examples
+- Real-world results (2.2 MiB → 15 KiB reduction)
+- Performance implications for replay
+- When to use each filter mode
+
+**Essential reading** for understanding why recordings grow large and how to prepare them for efficient replay.
+
+### COMMAND-AMBIGUITIES.md
+**MongoDB operations interpretation guide** for consulting engineers:
+- Command-by-command analysis of ambiguous operations
+- getMore: User cursors vs oplog tailing (90% is replication!)
+- hello: Connection health checks (explains high op counts)
+- Ops Manager / Atlas metrics interpretation
+- Customer conversation templates
+- "Why 10,000 ops/sec when my app does 500?" explained
+- Replica set overhead calculations
+- Best practices for workload analysis
+
+**Critical resource** for MongoDB consultants explaining monitoring statistics to customers. Also valuable for understanding what traffic recordings capture.
 
 ## Reference Documentation
 
@@ -98,6 +125,25 @@ Essential reading for understanding the proven approaches we're building upon.
 - Filter subcommand capabilities (splitting, time ranges)
 
 Reference for CLI design inspiration and understanding Mongoreplay's user interface.
+
+## Document Reading Order
+
+**For developers implementing traffic-replay:**
+1. Start with `design.md` - Understand the architecture
+2. Read `RESEARCH-SUMMARY.md` - Context on decisions made
+3. Review `reference/mongodb-traffic-recording.md` - Binary format details
+4. Check `reference/go-driver-wire-protocol.md` - How we'll send messages
+5. Reference `FILTERING.md` - How to process recordings
+
+**For MongoDB consulting engineers:**
+1. Read `COMMAND-AMBIGUITIES.md` - Interpret customer metrics
+2. Review `FILTERING.md` - Understand recording overhead
+3. Reference `reference/mongodb-traffic-recording.md` - How traffic recording works
+
+**For understanding the original tool:**
+1. `reference/mongoreplay-analysis.md` - Original implementation
+2. `reference/mongoreplay-cli.md` - CLI reference
+3. `reference/deprecated-opcodes.md` - OpCode evolution
 
 ## Future Documentation
 

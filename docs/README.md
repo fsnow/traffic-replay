@@ -8,9 +8,9 @@ This directory contains all documentation for the Traffic-Replay project.
 docs/
 ├── README.md                              # This file
 ├── design.md                              # Design decisions and architecture
-├── RESEARCH-SUMMARY.md                    # Research phase summary and key findings
-├── FILTERING.md                           # Guide to filtering recordings (99%+ reduction)
-├── COMMAND-AMBIGUITIES.md                 # MongoDB command interpretation for consulting engineers
+├── research-summary.md                    # Research phase summary and key findings
+├── filtering.md                           # Guide to filtering recordings (99%+ reduction)
+├── command-ambiguities.md                 # MongoDB command interpretation for consulting engineers
 └── reference/
     ├── mongodb-traffic-recording.md       # MongoDB traffic recording reference
     ├── deprecated-opcodes.md              # Wire protocol OpCode compatibility
@@ -35,7 +35,7 @@ docs/
 
 This is a **living document** that evolves as we make decisions and progress. **Start here** to understand the project.
 
-### RESEARCH-SUMMARY.md
+### research-summary.md
 High-level summary of the research phase completed in October-November 2025:
 - Overview of key findings
 - Analysis of Mongoreplay (original tool)
@@ -45,7 +45,7 @@ High-level summary of the research phase completed in October-November 2025:
 
 Quick reference for understanding what research was done and why we made certain choices.
 
-### FILTERING.md
+### filtering.md
 **Comprehensive filtering guide** for MongoDB traffic recordings:
 - The problem: 99% of traffic is cluster chatter
 - How command name extraction works (OP_MSG BSON parsing)
@@ -57,7 +57,7 @@ Quick reference for understanding what research was done and why we made certain
 
 **Essential reading** for understanding why recordings grow large and how to prepare them for efficient replay.
 
-### COMMAND-AMBIGUITIES.md
+### command-ambiguities.md
 **MongoDB operations interpretation guide** for consulting engineers:
 - Command-by-command analysis of ambiguous operations
 - getMore: User cursors vs oplog tailing (90% is replication!)
@@ -130,14 +130,14 @@ Reference for CLI design inspiration and understanding Mongoreplay's user interf
 
 **For developers implementing traffic-replay:**
 1. Start with `design.md` - Understand the architecture
-2. Read `RESEARCH-SUMMARY.md` - Context on decisions made
+2. Read `research-summary.md` - Context on decisions made
 3. Review `reference/mongodb-traffic-recording.md` - Binary format details
 4. Check `reference/go-driver-wire-protocol.md` - How we'll send messages
-5. Reference `FILTERING.md` - How to process recordings
+5. Reference `filtering.md` - How to process recordings
 
 **For MongoDB consulting engineers:**
-1. Read `COMMAND-AMBIGUITIES.md` - Interpret customer metrics
-2. Review `FILTERING.md` - Understand recording overhead
+1. Read `command-ambiguities.md` - Interpret customer metrics
+2. Review `filtering.md` - Understand recording overhead
 3. Reference `reference/mongodb-traffic-recording.md` - How traffic recording works
 
 **For understanding the original tool:**

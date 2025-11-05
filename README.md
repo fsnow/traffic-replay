@@ -53,9 +53,9 @@ See the [`docs/`](docs/) directory for comprehensive documentation:
 
 ### Project Documentation
 - [`docs/design.md`](docs/design.md) - Main design document and architecture
-- [`docs/RESEARCH-SUMMARY.md`](docs/RESEARCH-SUMMARY.md) - Research phase summary
-- [`docs/FILTERING.md`](docs/FILTERING.md) - Guide to filtering recordings (99%+ reduction!)
-- [`docs/COMMAND-AMBIGUITIES.md`](docs/COMMAND-AMBIGUITIES.md) - MongoDB command interpretation guide for consulting engineers
+- [`docs/research-summary.md`](docs/research-summary.md) - Research phase summary
+- [`docs/filtering.md`](docs/filtering.md) - Guide to filtering recordings (99%+ reduction!)
+- [`docs/command-ambiguities.md`](docs/command-ambiguities.md) - MongoDB command interpretation guide for consulting engineers
 
 ### Technical Reference
 - [`docs/reference/`](docs/reference/) - Technical reference documentation

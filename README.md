@@ -50,9 +50,19 @@ go test -v ./pkg/reader -run TestRealRecording
 ## Documentation
 
 See the [`docs/`](docs/) directory for comprehensive documentation:
-- [`docs/design.md`](docs/design.md) - Main design document
+
+### Project Documentation
+- [`docs/design.md`](docs/design.md) - Main design document and architecture
 - [`docs/RESEARCH-SUMMARY.md`](docs/RESEARCH-SUMMARY.md) - Research phase summary
+- [`docs/FILTERING.md`](docs/FILTERING.md) - Guide to filtering recordings (99%+ reduction!)
+- [`docs/COMMAND-AMBIGUITIES.md`](docs/COMMAND-AMBIGUITIES.md) - MongoDB command interpretation guide for consulting engineers
+
+### Technical Reference
 - [`docs/reference/`](docs/reference/) - Technical reference documentation
+  - MongoDB traffic recording format
+  - Wire protocol analysis
+  - Go driver integration
+  - Mongoreplay analysis
 
 ## Binary Format
 
@@ -78,6 +88,9 @@ MongoDB traffic recordings use the following binary format:
 ### Phase 1 (MVP)
 - [x] Parse MongoDB traffic recording files
 - [x] Read and validate packet structure
+- [x] Command extraction from OP_MSG packets
+- [x] Filter recordings (remove 99% of cluster chatter)
+- [x] Analysis and inspection tools
 - [ ] Send wire protocol messages to MongoDB
 - [ ] Fast-forward replay mode
 - [ ] Basic CLI

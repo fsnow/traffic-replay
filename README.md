@@ -83,6 +83,60 @@ MongoDB traffic recordings use the following binary format:
 └──────────────────────────────────────────────────────────┘
 ```
 
+## Available Tools
+
+### Analysis Tools
+
+**analyze** - High-level recording analysis
+```bash
+go run cmd/analyze/main.go recording.bin
+# Shows: packet counts, opcodes, commands, sessions, duration
+```
+
+**analyze-detailed** - Detailed operation breakdown
+```bash
+go run cmd/analyze-detailed/main.go recording.bin
+# Shows: operation counts with percentages
+# Special: getMore breakdown by database and collection
+```
+
+**packets** - Low-level packet inspection
+```bash
+go run cmd/packets/main.go recording.bin
+# Shows: detailed packet structure, hex dumps, BSON parsing
+```
+
+### Filtering and Transformation
+
+**filter** - Remove internal operations and reduce file size
+```bash
+# Smart context-aware filtering (99%+ reduction)
+go run cmd/filter/main.go -input recording.bin -output filtered.bin \
+  -user-ops-smart -requests-only
+
+# CRUD only
+go run cmd/filter/main.go -input recording.bin -output crud.bin \
+  -include-commands insert,update,delete,find -requests-only
+
+# Time-based filtering
+go run cmd/filter/main.go -input recording.bin -output first-100ms.bin \
+  -max-offset 100000
+```
+
+**script-gen** - Generate mongosh replay script
+```bash
+# Generate full replay script
+go run cmd/script-gen/main.go recording.bin --requests-only > replay.js
+
+# Generate CRUD-only script
+go run cmd/script-gen/main.go recording.bin --crud-only --requests-only > crud.js
+
+# Then manually replay:
+mongosh mongodb://localhost:27017 < replay.js
+```
+
+See [`docs/filtering.md`](docs/filtering.md) for detailed filtering guide.
+
 ## Features (Planned)
 
 ### Phase 1 (MVP)
@@ -91,6 +145,7 @@ MongoDB traffic recordings use the following binary format:
 - [x] Command extraction from OP_MSG packets
 - [x] Filter recordings (remove 99% of cluster chatter)
 - [x] Analysis and inspection tools
+- [x] Script generation for manual replay
 - [ ] Send wire protocol messages to MongoDB
 - [ ] Fast-forward replay mode
 - [ ] Basic CLI

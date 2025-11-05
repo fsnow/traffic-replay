@@ -51,16 +51,21 @@ Hex: 02 69 6e 73 65 72 74 00 06 00 00 00 75 73 65 72 73 00
 
 Commands are categorized by name:
 
-**User Operations:**
+**Likely User Operations (but context-dependent):**
 - CRUD: `insert`, `update`, `delete`, `find`, `findAndModify`, `aggregate`, `count`, `distinct`
+  - **Note:** Even writes can be internal (e.g., `insert` on `system.sessions`)
 - DDL: `create`, `drop`, `createIndexes`, `dropIndexes`, `listIndexes`, `collMod`
 
-**Internal Operations:**
+**Definitely Internal Operations:**
 - Health: `hello`, `isMaster`, `ping`, `buildInfo`
 - Replication: `replSetHeartbeat`, `replSetUpdatePosition`
-- Oplog tailing: `getMore` (usually)
 
-**The Problem: Some commands are ambiguous!**
+**Highly Ambiguous:**
+- `getMore` - User cursor continuation OR oplog tailing (90%+ is replication)
+- `find` - User query OR driver/monitoring discovery
+- `aggregate` - User pipeline OR Atlas metrics collection
+
+**The Problem: Most commands need context to classify correctly!**
 
 ### Method 3: Context-Aware Classification (Smart)
 
@@ -226,30 +231,36 @@ Dropped by reason:
 
 ## Command Categories Reference
 
-### CRUD Operations (User)
-- `insert`, `update`, `delete`
-- `find`, `findAndModify`
-- `aggregate`, `count`, `distinct`
+### Likely User Operations (Context-Dependent)
+**CRUD Operations:**
+- `insert`, `update`, `delete` - **BUT** can be internal on system collections (e.g., `system.sessions`)
+- `find`, `findAndModify` - **BUT** can be internal on admin/config databases
+- `aggregate`, `count`, `distinct` - **BUT** can be internal for metrics collection
 
-### DDL Operations (User)
+**DDL Operations:**
 - `create`, `drop`
-- `createIndexes`, `dropIndexes`, `listIndexes`
+- `createIndexes`, `dropIndexes`
 - `collMod`, `renameCollection`
 
-### Health Checks (Internal)
+**Smart filter checks:** Database must be user database AND collection must not be a system collection
+
+### Definitely Internal Operations
+**Health Checks:**
 - `hello`, `isMaster`, `ping`
 - `buildInfo`, `serverStatus`
 
-### Replication (Internal)
+**Replication:**
 - `replSetHeartbeat`
 - `replSetUpdatePosition`
 - `replSetGetStatus`, `replSetGetConfig`
 
-### Ambiguous (Context-Dependent)
-- `getMore` - User cursor OR oplog tailing
+### Highly Ambiguous (Always Check Context)
+- `getMore` - User cursor continuation (user DB) OR oplog tailing (`local.oplog.rs`)
+- `find` - User query (user DB) OR driver discovery (admin/config)
+- `aggregate` - User pipeline (user DB) OR metrics collection (admin/atlascli)
 - `listIndexes` - User query OR driver discovery
-- `listCollections` - User query OR driver discovery
-- `listDatabases` - User query OR driver discovery
+- `listCollections` - User query OR tool refresh
+- `listDatabases` - User query OR monitoring
 
 ---
 

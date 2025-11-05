@@ -349,6 +349,74 @@ Returns server statistics. Used by monitoring tools.
 
 ---
 
+### 10. `insert`, `update`, `delete` - Mostly User, Sometimes Internal
+
+Write operations modify data. While typically user-initiated, they can also be internal.
+
+#### Context A: User Operations (Most Cases)
+```javascript
+// Application writes
+db.orders.insert({customer: "Alice", total: 100})
+db.users.update({_id: 123}, {$set: {status: "active"}})
+db.logs.delete({date: {$lt: oldDate}})
+```
+
+**Characteristics:**
+- Database: User database
+- Collection: User collection
+- Frequency: Application-dependent
+- Pattern: Business logic operations
+
+#### Context B: Internal Operations
+
+```javascript
+// MongoDB internal writes to system collections
+db.getSiblingDB("config").system.sessions.insert(...)  // Session management
+db.getSiblingDB("admin").system.users.update(...)      // User management
+db.getSiblingDB("local").startup_log.insert(...)       // Startup tracking
+```
+
+**Characteristics:**
+- Database: **`admin`**, **`local`**, **`config`**
+- Collection: **`system.*`** collections (especially `system.sessions`)
+- Frequency: Automatic, driven by server operations
+- Volume: Usually low, but `system.sessions` can be high
+
+#### Common Internal Write Patterns
+
+**Session Management:**
+```
+Database: config
+Collection: system.sessions
+Commands: insert, update, delete
+Purpose: Track client sessions for retryable writes and transactions
+Frequency: Per session creation/refresh/cleanup
+```
+
+**User/Role Management:**
+```
+Database: admin
+Collection: system.users, system.roles
+Commands: insert, update, delete
+Purpose: Authentication and authorization updates
+Frequency: Administrative operations
+```
+
+#### Differentiation
+```
+Total writes/sec: 1,000
+
+Breakdown by database:
+├─ "myapp": 950 ops/sec → USER
+├─ "config" (system.sessions): 40 ops/sec → INTERNAL
+└─ "admin": 10 ops/sec → INTERNAL (user management)
+```
+
+**Customer Conversation:**
+> "Your 1,000 writes/sec includes 950 from your application and 50 internal operations. The 40 writes to config.system.sessions are MongoDB's session tracking for retryable writes - this is normal overhead and scales with your connection count."
+
+---
+
 ## Ops Manager / Atlas UI Interpretation Guide
 
 ### What You See in Dashboards
@@ -368,20 +436,39 @@ This includes:
 
 ### How to Calculate "Real" User Load
 
-**Method 1: Database-Level Filtering**
+**Method 1: Database-Level Filtering (Simple)**
 ```
 User operations ≈ Operations on user databases only
                   (exclude: local, admin, config)
+
+Note: This is imperfect - some writes to admin (like createUser) ARE user operations
 ```
 
-**Method 2: Command Filtering**
+**Method 2: Database + Collection Filtering (Accurate)**
 ```
-User operations ≈ insert + update + delete + find + aggregate
-                  (on user databases)
-                  + getMore (on user databases only)
+User operations = Operations WHERE:
+                  - Database is NOT in (local, admin, config)
+                  OR
+                  - Database is (admin, config) BUT collection is NOT system.*
+                    AND command is administrative (createUser, createRole, etc.)
 ```
 
-**Method 3: Use Database-Specific Charts**
+**Method 3: Smart Context-Aware (Most Accurate)**
+```
+For each operation:
+  - CRUD operations (insert/update/delete/find/aggregate):
+      → User IF on user database AND not system collection
+      → Internal IF on admin/local/config OR system.* collection
+
+  - getMore:
+      → Internal IF local.oplog.rs (always replication)
+      → User IF on user database
+
+  - Health/replication commands:
+      → Always internal
+```
+
+**Method 4: Use Database-Specific Charts in Atlas**
 ```
 Atlas UI → Metrics → Select specific database
 (This automatically excludes internal databases)
@@ -462,29 +549,35 @@ User operations: Variable (could be 0-1000/sec)
 
 To replay only user operations:
 ```bash
-# Remove all internal chatter
+# Remove all internal chatter using smart context-aware filtering
 filter -input recording.bin -output user-ops.bin -user-ops-smart -requests-only
 
 # Result: 99%+ reduction in file size
-# Keeps only: insert, update, delete, find, aggregate (on user DBs)
-# Removes: replication, health checks, monitoring
+# Keeps: Operations on user databases (excluding system.* collections)
+# Removes:
+#   - Replication (getMore on local.oplog.rs)
+#   - Health checks (hello, ping, buildInfo)
+#   - Internal writes (system.sessions, system.users)
+#   - Monitoring (serverStatus)
 ```
 
 ---
 
 ## Quick Reference Tables
 
-### Definitely User Operations
-| Command | Usage | Database |
-|---------|-------|----------|
-| `insert` | Insert documents | User DBs |
-| `update` | Update documents | User DBs |
-| `delete` | Delete documents | User DBs |
-| `find` | Query documents | User DBs (95%+) |
-| `aggregate` | Aggregation pipelines | User DBs (95%+) |
-| `distinct` | Distinct values | User DBs |
-| `count` | Count documents | User DBs |
-| `findAndModify` | Atomic update+return | User DBs |
+### Likely User Operations (Check Context!)
+| Command | Typical Usage | User Context | Internal Context |
+|---------|---------------|--------------|------------------|
+| `insert` | Insert documents | User DBs | `system.sessions`, `system.users` |
+| `update` | Update documents | User DBs | `system.sessions`, `system.roles` |
+| `delete` | Delete documents | User DBs | `system.sessions`, `startup_log` |
+| `find` | Query documents | User DBs | `admin`, `config` databases |
+| `aggregate` | Aggregation pipelines | User DBs | `admin`, `atlascli` (metrics) |
+| `distinct` | Distinct values | User DBs | Rare internal use |
+| `count` | Count documents | User DBs | Monitoring queries |
+| `findAndModify` | Atomic update+return | User DBs | System collection updates |
+
+**Rule:** Check database AND collection. Operations on `admin`/`local`/`config` databases or `system.*` collections are often internal.
 
 ### Definitely Internal Operations
 | Command | Purpose | Database | Frequency |
@@ -494,14 +587,14 @@ filter -input recording.bin -output user-ops.bin -user-ops-smart -requests-only
 | `ping` | Connectivity test | Any | Varies |
 | `buildInfo` | Version info | `admin` | Per connection |
 | `serverStatus` | Metrics collection | `admin` | Per minute |
-| `getMore` | Oplog tailing | **`local.oplog.rs`** | Continuous |
 
-### Ambiguous Commands (Check Context!)
+### Highly Ambiguous Commands (Always Check Context!)
 | Command | User Context | Internal Context | Differentiator |
 |---------|--------------|------------------|----------------|
-| `getMore` | Cursor continuation | Oplog tailing | Database: user vs `local` |
-| `find` | Data queries | Schema discovery | Database: user vs `admin`/`config` |
-| `aggregate` | Analytics | Metrics collection | Database: user vs `admin`/`atlascli` |
+| `getMore` | Cursor continuation (user DB) | Oplog tailing (`local.oplog.rs`) | Database + collection |
+| `find` | Data queries (user DB) | Schema discovery (`admin`/`config`) | Database |
+| `aggregate` | Analytics (user DB) | Metrics collection (`admin`/`atlascli`) | Database |
+| `insert`/`update`/`delete` | Data writes (user DB) | System collection updates (`system.*`) | Database + collection |
 | `listIndexes` | Schema queries | Driver discovery | Frequency: sporadic vs startup |
 | `listCollections` | Schema queries | Tool refresh | Frequency pattern |
 

@@ -138,23 +138,36 @@ func (p *Packet) IsLikelyUserOperation() bool {
 		return false
 	}
 
-	// Definitely user operations
-	definiteUserOps := map[string]bool{
+	// Check database and collection context for all operations
+	db := p.ExtractDatabase()
+	coll := p.ExtractCollection()
+
+	// Even write operations can be internal on system collections
+	// (e.g., insert/update/delete on system.sessions)
+	// So we check context for ALL commands
+
+	// Likely user operations (but check context)
+	likelyUserOps := map[string]bool{
 		"insert":        true,
 		"update":        true,
 		"delete":        true,
-		"find":          true,
 		"findAndModify": true,
-		"aggregate":     true,
-		"count":         true,
-		"distinct":      true,
 		"create":        true,
 		"drop":          true,
 		"createIndexes": true,
 		"dropIndexes":   true,
 	}
 
-	if definiteUserOps[cmd] {
+	if likelyUserOps[cmd] {
+		// Internal database + system collection = internal operation
+		if IsInternalDatabase(db) && IsInternalCollection(coll) {
+			return false
+		}
+		// Operations on internal databases are suspicious
+		// Even writes to admin/local/config are often internal
+		if IsInternalDatabase(db) {
+			return false
+		}
 		return true
 	}
 
@@ -173,38 +186,40 @@ func (p *Packet) IsLikelyUserOperation() bool {
 		return false
 	}
 
-	// Ambiguous commands - use context
-	if cmd == "getMore" {
-		// Check database and collection
-		db := p.ExtractDatabase()
-		coll := p.ExtractCollection()
+	// Ambiguous commands - use database/collection context
+	ambiguousOps := map[string]bool{
+		"find":             true, // User queries OR driver/monitoring discovery
+		"aggregate":        true, // User pipelines OR Atlas metrics collection
+		"count":            true, // User count OR monitoring
+		"distinct":         true, // User distinct OR monitoring
+		"getMore":          true, // User cursor continuation OR oplog tailing
+		"listIndexes":      true, // User query OR driver discovery
+		"listCollections":  true, // User query OR driver discovery
+		"listDatabases":    true, // User query OR monitoring
+	}
 
-		// If it's on local.oplog.rs, it's internal replication
-		if db == "local" && coll == "oplog.rs" {
+	if ambiguousOps[cmd] {
+		// Special case: getMore on oplog is ALWAYS replication
+		if cmd == "getMore" && db == "local" && coll == "oplog.rs" {
 			return false
 		}
 
-		// If it's on an internal database, likely internal
+		// Operations on internal databases are likely internal
 		if IsInternalDatabase(db) {
+			// Check collection - system collections are definitely internal
+			if IsInternalCollection(coll) {
+				return false
+			}
+			// On internal DB but not a system collection - could be either
+			// Be conservative: only allow if it's a clear user operation
+			// For now, reject (user operations rarely target admin/local/config)
 			return false
 		}
 
-		// Otherwise, assume it's a user operation
-		// (continuing a cursor from a user query)
+		// On user database - likely user operation
 		return true
 	}
 
-	if cmd == "listIndexes" || cmd == "listCollections" || cmd == "listDatabases" {
-		// These can be user-initiated or driver-initiated
-		// Check if on internal database
-		db := p.ExtractDatabase()
-		if IsInternalDatabase(db) {
-			return false
-		}
-		// Assume user operation if on user database
-		return true
-	}
-
-	// Unknown command - be conservative and include it
+	// Unknown command - be conservative and exclude it
 	return false
 }

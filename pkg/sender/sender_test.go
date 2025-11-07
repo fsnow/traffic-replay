@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/v2/bson"
 )
 
 // TestSenderIntegration tests the Sender against a real MongoDB instance

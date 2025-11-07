@@ -95,20 +95,44 @@ go run cmd/filter/main.go \
 
 ### 3. Replay Traffic
 
-**Option A: Automated Replay**
+**Option A: Automated Replay (Raw Mode - Default)**
+
+Raw mode sends exact wire protocol bytes for precise replay:
 
 ```bash
-# Replay directly against target MongoDB
+# Raw mode: exact wire protocol replay with original timing (default)
 go run cmd/replay/main.go filtered-ops.bin mongodb://test-cluster:27017 \
   --requests-only --user-ops
 
-# Dry run to validate commands
+# Fast-forward mode (no timing delays)
+go run cmd/replay/main.go filtered-ops.bin mongodb://test-cluster:27017 \
+  --speed 0 --requests-only --user-ops
+
+# 2x speed replay
+go run cmd/replay/main.go filtered-ops.bin mongodb://test-cluster:27017 \
+  --speed 2.0 --requests-only --user-ops
+
+# Dry run to validate wire messages
 go run cmd/replay/main.go filtered-ops.bin mongodb://test-cluster:27017 \
   --dry-run --requests-only
 
 # Replay with limit
 go run cmd/replay/main.go filtered-ops.bin mongodb://test-cluster:27017 \
   --requests-only --limit 100
+```
+
+**Option A (Alternative): Automated Replay (Command Mode)**
+
+Command mode parses and re-executes operations via RunCommand:
+
+```bash
+# Command mode: semantic replay via RunCommand
+go run cmd/replay/main.go filtered-ops.bin mongodb://test-cluster:27017 \
+  --mode command --requests-only --user-ops
+
+# Dry run in command mode
+go run cmd/replay/main.go filtered-ops.bin mongodb://test-cluster:27017 \
+  --mode command --dry-run --requests-only
 ```
 
 **Option B: Manual Replay with Script**
@@ -205,10 +229,28 @@ go run cmd/filter/main.go -input recording.bin -output first-100ms.bin \
 ### Replay Tools
 
 **replay** - Automated replay of recorded traffic
+
+Two replay modes available:
+- **Raw mode** (default): Sends exact wire protocol bytes for precise replay
+- **Command mode**: Parses and re-executes operations via RunCommand
+
+Speed control:
+- **1.0x** (default): Preserves original timing between operations
+- **0**: Fast-forward mode (no delays)
+- **2.0**: 2x speed, **0.5**: half speed, etc.
+
 ```bash
-# Replay operations against target MongoDB
+# Raw mode with original timing (default)
 go run cmd/replay/main.go recording.bin mongodb://localhost:27017 \
   --requests-only --user-ops
+
+# Fast-forward mode (no delays)
+go run cmd/replay/main.go recording.bin mongodb://localhost:27017 \
+  --speed 0 --requests-only --user-ops
+
+# Command mode: semantic replay
+go run cmd/replay/main.go recording.bin mongodb://localhost:27017 \
+  --mode command --requests-only --user-ops
 
 # Dry run mode (validate without sending)
 go run cmd/replay/main.go recording.bin mongodb://localhost:27017 \
@@ -260,23 +302,24 @@ See [`recordings/README.md`](recordings/README.md) for complete test coverage de
 - [x] Analysis tools (summary, detailed breakdown, packet inspection)
 - [x] Script generation for manual replay (with insertMany/insertOne, replaceOne/updateOne detection)
 - [x] Internal field cleaning ($clusterTime, lsid, txnNumber)
-- [x] Wire message sender using MongoDB Go driver (`pkg/sender/`)
-- [x] Automated replay engine (`cmd/replay/`)
+- [x] Raw wire protocol sender using MongoDB Go driver (`pkg/sender/raw_sender.go`)
+- [x] Command-based sender using RunCommand (`pkg/sender/sender.go`)
+- [x] Dual-mode automated replay engine (`cmd/replay/`) with raw (default) and command modes
 - [x] Basic CLI with filtering and replay options
-- [ ] Fast-forward replay mode
-- [ ] Timing-based replay
+- [x] Timing-based replay with speed multiplier (1x default, 0 for fast-forward)
+- [x] Speed control (--speed flag: 0 = fast-forward, 1.0 = original timing, 2.0 = 2x speed, etc.)
 
 ### Phase 2 (Production-Ready)
-- [ ] Time-scaled replay with configurable speed multiplier
-- [ ] Session management with goroutines
-- [ ] Statistics and progress reporting
+- [ ] Session management with goroutines (parallel replay per session)
+- [ ] Enhanced statistics and progress reporting
 - [ ] Connection lifecycle handling
+- [ ] Response validation mode
 
 ### Phase 3 (Advanced)
-- [ ] Response validation mode
 - [ ] OpCode translation (legacy → OP_MSG)
 - [ ] Filter and split recordings
-- [ ] Parallel replay support
+- [ ] Multi-connection parallel replay
+- [ ] Real-time recording analysis
 
 ## Contributing
 

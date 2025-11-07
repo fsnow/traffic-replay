@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"time"
 
-	"go.mongodb.org/mongo-driver/bson"
-	"go.mongodb.org/mongo-driver/mongo"
-	"go.mongodb.org/mongo-driver/mongo/options"
+	"go.mongodb.org/mongo-driver/v2/bson"
+	"go.mongodb.org/mongo-driver/v2/mongo"
+	"go.mongodb.org/mongo-driver/v2/mongo/options"
 )
 
 // Sender manages connections to MongoDB and sends commands from recorded traffic
@@ -18,14 +18,14 @@ type Sender struct {
 
 // New creates a new Sender with a connection to MongoDB
 func New(ctx context.Context, uri string, opts ...*options.ClientOptions) (*Sender, error) {
-	// Start with the URI as the base option
-	allOpts := []*options.ClientOptions{options.Client().ApplyURI(uri)}
+	// Build combined options (v2 API: Connect doesn't take context)
+	clientOpts := options.Client().ApplyURI(uri)
+	for _, opt := range opts {
+		clientOpts = options.MergeClientOptions(clientOpts, opt)
+	}
 
-	// Append any additional options
-	allOpts = append(allOpts, opts...)
-
-	// Connect to MongoDB with all options
-	client, err := mongo.Connect(ctx, allOpts...)
+	// Connect to MongoDB (v2: Connect doesn't take ctx as first parameter)
+	client, err := mongo.Connect(clientOpts)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to MongoDB: %w", err)
 	}

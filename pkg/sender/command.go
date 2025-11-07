@@ -4,7 +4,7 @@ import (
 	"fmt"
 
 	"github.com/fsnow/traffic-replay/pkg/reader"
-	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/v2/bson"
 )
 
 // Command represents a MongoDB command extracted from a recorded packet

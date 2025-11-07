@@ -119,10 +119,11 @@ func runRawMode(rec *reader.RecordingReader, mongoURI string, requestsOnly, user
 	skippedPackets := 0
 	successfulOps := 0
 	failedOps := 0
-	startTime := time.Now()
+	wallClockStart := time.Now()
 
-	// Timing state
-	var lastOffset uint64
+	// Timing state for speed control
+	var replayStartTime time.Time
+	var firstOffset uint64
 	firstOp := true
 
 	// Replay loop
@@ -164,15 +165,19 @@ func runRawMode(rec *reader.RecordingReader, mongoURI string, requestsOnly, user
 		// Timing logic (unless speed is 0 for fast-forward)
 		if speed > 0 {
 			if firstOp {
-				lastOffset = packet.Offset
+				replayStartTime = time.Now()
+				firstOffset = packet.Offset
 				firstOp = false
 			} else {
-				// Calculate delay based on packet offsets (in microseconds)
-				delay := time.Duration(float64(packet.Offset-lastOffset)/speed) * time.Microsecond
-				if delay > 0 {
-					time.Sleep(delay)
+				// Calculate target time based on recording offset
+				elapsedInRecording := packet.Offset - firstOffset // microseconds
+				targetElapsed := time.Duration(float64(elapsedInRecording)/speed) * time.Microsecond
+				targetTime := replayStartTime.Add(targetElapsed)
+
+				// Sleep until target time (if we're ahead of schedule)
+				if sleepDuration := time.Until(targetTime); sleepDuration > 0 {
+					time.Sleep(sleepDuration)
 				}
-				lastOffset = packet.Offset
 			}
 		}
 
@@ -197,7 +202,7 @@ func runRawMode(rec *reader.RecordingReader, mongoURI string, requestsOnly, user
 		}
 	}
 
-	printSummary(totalPackets, skippedPackets, successfulOps, failedOps, time.Since(startTime))
+	printSummary(totalPackets, skippedPackets, successfulOps, failedOps, time.Since(wallClockStart))
 
 	if failedOps > 0 {
 		os.Exit(1)
@@ -228,10 +233,11 @@ func runCommandMode(rec *reader.RecordingReader, mongoURI string, requestsOnly, 
 	skippedPackets := 0
 	successfulOps := 0
 	failedOps := 0
-	startTime := time.Now()
+	wallClockStart := time.Now()
 
-	// Timing state
-	var lastOffset uint64
+	// Timing state for speed control
+	var replayStartTime time.Time
+	var firstOffset uint64
 	firstOp := true
 
 	// Replay loop
@@ -275,15 +281,19 @@ func runCommandMode(rec *reader.RecordingReader, mongoURI string, requestsOnly, 
 		// Timing logic (unless speed is 0 for fast-forward)
 		if speed > 0 {
 			if firstOp {
-				lastOffset = packet.Offset
+				replayStartTime = time.Now()
+				firstOffset = packet.Offset
 				firstOp = false
 			} else {
-				// Calculate delay based on packet offsets (in microseconds)
-				delay := time.Duration(float64(packet.Offset-lastOffset)/speed) * time.Microsecond
-				if delay > 0 {
-					time.Sleep(delay)
+				// Calculate target time based on recording offset
+				elapsedInRecording := packet.Offset - firstOffset // microseconds
+				targetElapsed := time.Duration(float64(elapsedInRecording)/speed) * time.Microsecond
+				targetTime := replayStartTime.Add(targetElapsed)
+
+				// Sleep until target time (if we're ahead of schedule)
+				if sleepDuration := time.Until(targetTime); sleepDuration > 0 {
+					time.Sleep(sleepDuration)
 				}
-				lastOffset = packet.Offset
 			}
 		}
 
@@ -306,7 +316,7 @@ func runCommandMode(rec *reader.RecordingReader, mongoURI string, requestsOnly, 
 		}
 	}
 
-	printSummary(totalPackets, skippedPackets, successfulOps, failedOps, time.Since(startTime))
+	printSummary(totalPackets, skippedPackets, successfulOps, failedOps, time.Since(wallClockStart))
 
 	if failedOps > 0 {
 		os.Exit(1)

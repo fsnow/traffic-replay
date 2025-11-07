@@ -123,7 +123,9 @@ func runRawMode(rec *reader.RecordingReader, mongoURI string, requestsOnly, user
 
 	// Timing state for speed control
 	var replayStartTime time.Time
+	var replayEndTime time.Time
 	var firstOffset uint64
+	var lastOffset uint64
 	firstOp := true
 
 	// Replay loop
@@ -200,9 +202,13 @@ func runRawMode(rec *reader.RecordingReader, mongoURI string, requestsOnly, user
 				successfulOps++
 			}
 		}
+
+		// Track timing for last processed operation
+		lastOffset = packet.Offset
+		replayEndTime = time.Now()
 	}
 
-	printSummary(totalPackets, skippedPackets, successfulOps, failedOps, time.Since(wallClockStart))
+	printSummary(totalPackets, skippedPackets, successfulOps, failedOps, time.Since(wallClockStart), firstOffset, lastOffset, replayStartTime, replayEndTime, speed)
 
 	if failedOps > 0 {
 		os.Exit(1)
@@ -237,7 +243,9 @@ func runCommandMode(rec *reader.RecordingReader, mongoURI string, requestsOnly, 
 
 	// Timing state for speed control
 	var replayStartTime time.Time
+	var replayEndTime time.Time
 	var firstOffset uint64
+	var lastOffset uint64
 	firstOp := true
 
 	// Replay loop
@@ -314,16 +322,20 @@ func runCommandMode(rec *reader.RecordingReader, mongoURI string, requestsOnly, 
 				successfulOps++
 			}
 		}
+
+		// Track timing for last processed operation
+		lastOffset = packet.Offset
+		replayEndTime = time.Now()
 	}
 
-	printSummary(totalPackets, skippedPackets, successfulOps, failedOps, time.Since(wallClockStart))
+	printSummary(totalPackets, skippedPackets, successfulOps, failedOps, time.Since(wallClockStart), firstOffset, lastOffset, replayStartTime, replayEndTime, speed)
 
 	if failedOps > 0 {
 		os.Exit(1)
 	}
 }
 
-func printSummary(totalPackets, skippedPackets, successfulOps, failedOps int, duration time.Duration) {
+func printSummary(totalPackets, skippedPackets, successfulOps, failedOps int, duration time.Duration, firstOffset, lastOffset uint64, replayStartTime, replayEndTime time.Time, speed float64) {
 	fmt.Println("\n" + strings.Repeat("=", 60))
 	fmt.Println("REPLAY SUMMARY")
 	fmt.Println(strings.Repeat("=", 60))
@@ -335,6 +347,33 @@ func printSummary(totalPackets, skippedPackets, successfulOps, failedOps int, du
 	if successfulOps+failedOps > 0 {
 		fmt.Printf("Average per op:      %v\n", duration/time.Duration(successfulOps+failedOps))
 	}
+
+	// Timing validation (only if we processed operations and speed > 0)
+	if successfulOps+failedOps > 0 && speed > 0 && !replayStartTime.IsZero() && !replayEndTime.IsZero() {
+		recordingDuration := time.Duration(lastOffset-firstOffset) * time.Microsecond
+		expectedDuration := time.Duration(float64(recordingDuration) / speed)
+		actualDuration := replayEndTime.Sub(replayStartTime)
+
+		fmt.Println()
+		fmt.Printf("Recording duration:  %v\n", recordingDuration)
+		fmt.Printf("Expected duration:   %v (at %.1fx speed)\n", expectedDuration, speed)
+		fmt.Printf("Actual duration:     %v\n", actualDuration)
+
+		// Calculate timing accuracy
+		if expectedDuration > 0 {
+			accuracy := (float64(actualDuration) / float64(expectedDuration)) * 100
+			fmt.Printf("Timing accuracy:     %.1f%%", accuracy)
+
+			// Warn if significantly off target
+			if accuracy > 110 {
+				fmt.Printf(" (replay fell behind - target may be slower)")
+			} else if accuracy < 90 {
+				fmt.Printf(" (replay ran ahead - unexpected)")
+			}
+			fmt.Println()
+		}
+	}
+
 	fmt.Println(strings.Repeat("=", 60))
 }
 

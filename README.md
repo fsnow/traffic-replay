@@ -17,13 +17,14 @@ Captures, analyzes, filters, and replays MongoDB traffic recordings created with
 - ✅ Comprehensive analysis tools (`cmd/analyze/`, `cmd/analyze-detailed/`, `cmd/packets/`)
 - ✅ Smart filtering tool (`cmd/filter/`)
 - ✅ Script generator for manual replay (`cmd/script-gen/`)
+- ✅ Wire message sender (`pkg/sender/`)
+- ✅ Automated replay engine (`cmd/replay/`)
 - ✅ Validated against MongoDB 8.0 with 56 operation types
 - ✅ Test coverage: 70+ operation types including advanced features
 
 ### In Progress
-- Wire message sender using MongoDB Go driver
-- Automated replay engine
-- Basic CLI implementation
+- Advanced replay features (time-scaled replay, session management)
+- Statistics and progress reporting
 
 ## Quick Start
 
@@ -92,7 +93,25 @@ go run cmd/filter/main.go \
   -user-ops-smart -requests-only
 ```
 
-### 3. Generate Replay Script
+### 3. Replay Traffic
+
+**Option A: Automated Replay**
+
+```bash
+# Replay directly against target MongoDB
+go run cmd/replay/main.go filtered-ops.bin mongodb://test-cluster:27017 \
+  --requests-only --user-ops
+
+# Dry run to validate commands
+go run cmd/replay/main.go filtered-ops.bin mongodb://test-cluster:27017 \
+  --dry-run --requests-only
+
+# Replay with limit
+go run cmd/replay/main.go filtered-ops.bin mongodb://test-cluster:27017 \
+  --requests-only --limit 100
+```
+
+**Option B: Manual Replay with Script**
 
 ```bash
 # Generate executable mongosh script
@@ -183,6 +202,23 @@ go run cmd/filter/main.go -input recording.bin -output first-100ms.bin \
   -max-offset 100000
 ```
 
+### Replay Tools
+
+**replay** - Automated replay of recorded traffic
+```bash
+# Replay operations against target MongoDB
+go run cmd/replay/main.go recording.bin mongodb://localhost:27017 \
+  --requests-only --user-ops
+
+# Dry run mode (validate without sending)
+go run cmd/replay/main.go recording.bin mongodb://localhost:27017 \
+  --dry-run --requests-only
+
+# Limit number of operations
+go run cmd/replay/main.go recording.bin mongodb://localhost:27017 \
+  --requests-only --limit 100
+```
+
 **script-gen** - Generate mongosh replay script
 ```bash
 # Generate full replay script (uses db.getSiblingDB() for explicit database names)
@@ -224,10 +260,11 @@ See [`recordings/README.md`](recordings/README.md) for complete test coverage de
 - [x] Analysis tools (summary, detailed breakdown, packet inspection)
 - [x] Script generation for manual replay (with insertMany/insertOne, replaceOne/updateOne detection)
 - [x] Internal field cleaning ($clusterTime, lsid, txnNumber)
-- [ ] Wire message sender using MongoDB Go driver
-- [ ] Automated replay engine
+- [x] Wire message sender using MongoDB Go driver (`pkg/sender/`)
+- [x] Automated replay engine (`cmd/replay/`)
+- [x] Basic CLI with filtering and replay options
 - [ ] Fast-forward replay mode
-- [ ] Basic CLI
+- [ ] Timing-based replay
 
 ### Phase 2 (Production-Ready)
 - [ ] Time-scaled replay with configurable speed multiplier
